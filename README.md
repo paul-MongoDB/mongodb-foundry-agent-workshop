@@ -159,15 +159,47 @@ The Function App uses the endpoint, key, and embedding deployment name to call:
 
 ## 3. Deploy the Azure Resources
 
-The easiest path is to use one of the helper scripts. They deploy:
+Choose one deployment path. The helper scripts deploy the Azure infrastructure and publish the Function code. The Azure Portal button deploys infrastructure only, so it has one extra local publish step afterward.
 
-- A resource group.
+All paths provision the workshop's Azure resources in the selected resource group:
+
 - A MongoDB MCP Server container app.
 - A Linux Python Azure Function App.
 - A storage account for the Function App.
-- The embedding Function code.
 
 The workshop pins the MongoDB MCP Server image to `mongodb/mongodb-mcp-server:1.11.0` for repeatable deployments. Update that version intentionally after testing a newer MCP Server release.
+
+### Azure Portal
+
+[![Deploy to Azure](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2Fpaul-MongoDB%2Fmongodb-foundry-agent-workshop%2Fmain%2Fdeploy%2Fazuredeploy.json)
+
+This button opens the Azure Portal and deploys [deploy/azuredeploy.json](deploy/azuredeploy.json). It creates the Container App, Function App, storage account, and app settings, but it does not upload the Python Function code from this repository.
+
+In the Azure Portal form:
+
+1. Select your subscription.
+2. Create or select a resource group.
+3. Select the region that matches your Foundry and Azure OpenAI setup.
+4. Enter your MongoDB Atlas connection string.
+5. Enter your Azure OpenAI endpoint.
+6. Enter your Azure OpenAI API key.
+7. Confirm the embedding deployment name, usually `text-embedding-ada-002`.
+
+After deployment completes, copy these output values:
+
+- `mcpServerUrl`
+- `embeddingFunctionUrl`
+- `functionAppName`
+
+Then publish the Function code locally:
+
+```bash
+cd src/embedding-function
+func azure functionapp publish <functionAppName>
+cd ../..
+```
+
+Use the `functionAppName` output from the portal deployment in place of `<functionAppName>`.
 
 ### Bash
 
@@ -192,6 +224,8 @@ At the end, save the printed values:
 - `MCP Server URL`, which should end in `/mcp`.
 - `Embedding API URL`, which should end in `/api/embed`.
 
+The Bash script publishes the Function code automatically.
+
 ### PowerShell
 
 From the repository root:
@@ -207,6 +241,8 @@ From the repository root:
 ```
 
 Save the printed MCP Server URL and embedding API URL.
+
+The PowerShell script publishes the Function code automatically.
 
 ### Manual Bicep Deployment
 
@@ -251,6 +287,8 @@ cd ../..
 ```
 
 The Function App name is printed as `functionAppName` by the embedding Function Bicep deployment.
+
+If you used the Azure Portal button, the Function App name is printed as the `functionAppName` output in the portal deployment.
 
 ## 4. Validate the Deployed Services
 
