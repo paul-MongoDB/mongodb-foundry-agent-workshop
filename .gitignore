@@ -9,6 +9,7 @@ claude.md
 .env
 .env.*
 *.env
+!.env.template
 src/embedding-function/local.settings.json
 local.settings.json
 

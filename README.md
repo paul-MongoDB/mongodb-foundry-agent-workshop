@@ -40,6 +40,8 @@ Semantic search depends on these values staying aligned:
 ## Repository Layout
 
 ```text
+.env.template                      Local deployment test environment template
+
 deploy/
   azuredeploy.json                 Combined ARM template for one-shot infrastructure deployment
   embedding-function/main.bicep    Function App, storage account, and app settings
@@ -79,7 +81,9 @@ You need:
 
 Keep the Foundry project, the Azure OpenAI embedding deployment, the Function App, and the MCP Server in compatible regions whenever possible. The deployment scripts default to `eastus`; enter another Azure region, such as `eastus2`, if that is where your Foundry project and model deployment live.
 
-Do not commit or paste real secrets from `src/embedding-function/local.settings.json`.
+Do not commit or paste real secrets from `src/embedding-function/local.settings.json` or `.env`.
+
+For local clean-deployment testing, copy [.env.template](.env.template) to `.env` and fill in your own values. The real `.env` file is ignored by git.
 
 A Python virtual environment is optional. You only need one if you want to run the embedding Function locally or install Python dependencies outside the Azure deployment flow.
 
