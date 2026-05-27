@@ -1,13 +1,18 @@
 # MongoDB Atlas Search Agent for Azure AI Foundry
 
-This project deploys the backing services for a Microsoft Foundry agent that can answer questions about the MongoDB Atlas `sample_mflix` movie dataset.
+Many AI projects start in Microsoft Foundry, but the data they need to reason over already lives in MongoDB Atlas. This repository shows one practical way to connect those two worlds: use the MongoDB MCP Server to make Atlas available as a Foundry agent tool, then add a small embedding service for semantic search.
 
-The deployed agent uses two tools:
+The goal is not just to deploy a movie database assistant. The goal is to understand the integration pattern. If you want a Foundry agent to use Atlas data, this sample shows how to let the agent query MongoDB directly, run aggregations, and perform vector search when a user asks a conceptual question.
+
+This repo uses the MongoDB Atlas `sample_mflix` dataset so the pattern is easy to try end to end. Once deployed, the agent can answer direct movie questions, calculate statistics, and find movies by meaning or theme.
+
+The deployed agent uses:
 
 - A MongoDB MCP Server, deployed to Azure Container Apps, for direct MongoDB queries and aggregations.
 - An embedding API, deployed as an Azure Function, for generating query vectors before semantic MongoDB Vector Search.
+- An Azure AI Foundry agent that decides which tool path fits the user's question.
 
-After deployment, you open the agent in the Foundry playground, paste prompts from [samples/queries.md](samples/queries.md), and inspect the tool calls to verify that the agent chooses the right path.
+After deployment, open the agent in the Foundry playground, paste prompts from [samples/queries.md](samples/queries.md), and inspect the tool calls to see how Foundry uses Atlas through MCP.
 
 ## Architecture
 
@@ -70,7 +75,7 @@ src/embedding-function/
 You need:
 
 - An Azure subscription.
-- A resource group for the workshop resources.
+- A resource group for the deployment resources.
 - Azure CLI: `az`.
 - Azure Functions Core Tools v4: `func`.
 - `jq` if you use `scripts/deploy.sh`.
@@ -90,9 +95,9 @@ A Python virtual environment is optional. You only need one if you want to run t
 
 ## Recommended Setup Order
 
-For the smoothest workshop experience, keep the Foundry project and this repo's Azure resources in the same resource group and region when possible.
+For the smoothest setup experience, keep the Foundry project and this repo's Azure resources in the same resource group and region when possible.
 
-1. Create or select one Azure resource group for the workshop.
+1. Create or select one Azure resource group for the deployment.
 2. Create or select a Microsoft Foundry project in that resource group.
 3. Deploy the chat model for the agent, such as `gpt-4.1`.
 4. Deploy the embedding model with deployment name `text-embedding-ada-002`.
@@ -101,11 +106,11 @@ For the smoothest workshop experience, keep the Foundry project and this repo's 
 7. Publish the embedding Function code.
 8. Create the Foundry agent, add tools, paste instructions, and test prompts.
 
-The Foundry project and this repo's Azure resources can live in different resource groups, but using one resource group makes workshop cleanup and troubleshooting simpler.
+The Foundry project and this repo's Azure resources can live in different resource groups, but using one resource group makes cleanup and troubleshooting simpler.
 
 ## 1. Prepare Azure Resource Group
 
-Create or select a resource group for the workshop. Use the same region you plan to use for Foundry and Azure OpenAI if possible.
+Create or select a resource group for the deployment. Use the same region you plan to use for Foundry and Azure OpenAI if possible.
 
 With Azure CLI:
 
@@ -143,7 +148,7 @@ The Function App uses the endpoint, key, and embedding deployment name to call:
 4. Create a database user for the demo.
 5. Add network access for the deployed Azure Container App.
 
-For a workshop or short-lived demo, you can temporarily allow access from `0.0.0.0/0`. For anything longer-lived, restrict access to the Container App egress addresses or your private networking setup.
+For a short-lived demo, you can temporarily allow access from `0.0.0.0/0`. For anything longer-lived, restrict access to the Container App egress addresses or your private networking setup.
 
 ### Create the Vector Search Index
 
@@ -197,13 +202,13 @@ Wait until the index is active before testing semantic prompts.
 
 Choose one deployment path. The helper scripts deploy the Azure infrastructure and publish the Function code. The Azure Portal button deploys infrastructure only, so it has one extra local publish step afterward.
 
-All paths provision the workshop's Azure resources in the selected resource group:
+All paths provision this sample's Azure resources in the selected resource group:
 
 - A MongoDB MCP Server container app.
 - A Linux Python Azure Function App.
 - A storage account for the Function App.
 
-The workshop pins the MongoDB MCP Server image to `mongodb/mongodb-mcp-server:1.11.0` for repeatable deployments. Update that version intentionally after testing a newer MCP Server release.
+This repo pins the MongoDB MCP Server image to `mongodb/mongodb-mcp-server:1.11.0` for repeatable deployments. Update that version intentionally after testing a newer MCP Server release.
 
 ### Azure Portal
 
@@ -441,7 +446,7 @@ MDB_MCP_HTTP_AUTH_MODE=none
 MDB_MCP_READ_ONLY=true
 ```
 
-The read-only setting is intentional for workshop and demo safety.
+The read-only setting is intentional for demo safety.
 
 ## 10. Test in the Foundry Playground
 
