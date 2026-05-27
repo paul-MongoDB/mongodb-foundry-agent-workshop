@@ -167,6 +167,8 @@ The easiest path is to use one of the helper scripts. They deploy:
 - A storage account for the Function App.
 - The embedding Function code.
 
+The workshop pins the MongoDB MCP Server image to `mongodb/mongodb-mcp-server:1.11.0` for repeatable deployments. Update that version intentionally after testing a newer MCP Server release.
+
 ### Bash
 
 From the repository root:

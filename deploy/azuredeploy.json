@@ -82,7 +82,7 @@
           "containers": [
             {
               "name": "mcp-server",
-              "image": "mongodb/mongodb-mcp-server:latest",
+              "image": "mongodb/mongodb-mcp-server:1.11.0",
               "resources": {
                 "cpu": 0.5,
                 "memory": "1Gi"

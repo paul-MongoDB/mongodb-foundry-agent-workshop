@@ -5,7 +5,7 @@ param location string = resourceGroup().location
 param containerAppName string = 'mongo-mcp-server'
 
 @description('Docker image to deploy')
-param containerImage string = 'mongodb/mongodb-mcp-server:latest'
+param containerImage string = 'mongodb/mongodb-mcp-server:1.11.0'
 
 @description('Container CPU cores')
 @allowed(['0.25', '0.5', '1.0'])
