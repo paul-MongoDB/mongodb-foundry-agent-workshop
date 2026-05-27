@@ -70,6 +70,7 @@ src/embedding-function/
 You need:
 
 - An Azure subscription.
+- A resource group for the workshop resources.
 - Azure CLI: `az`.
 - Azure Functions Core Tools v4: `func`.
 - `jq` if you use `scripts/deploy.sh`.
@@ -87,7 +88,54 @@ For local clean-deployment testing, copy [.env.template](.env.template) to `.env
 
 A Python virtual environment is optional. You only need one if you want to run the embedding Function locally or install Python dependencies outside the Azure deployment flow.
 
-## 1. Prepare MongoDB Atlas
+## Recommended Setup Order
+
+For the smoothest workshop experience, keep the Foundry project and this repo's Azure resources in the same resource group and region when possible.
+
+1. Create or select one Azure resource group for the workshop.
+2. Create or select a Microsoft Foundry project in that resource group.
+3. Deploy the chat model for the agent, such as `gpt-4.1`.
+4. Deploy the embedding model with deployment name `text-embedding-ada-002`.
+5. Prepare MongoDB Atlas sample data and the `vector_index` index.
+6. Deploy this repo's Azure resources.
+7. Publish the embedding Function code.
+8. Create the Foundry agent, add tools, paste instructions, and test prompts.
+
+The Foundry project and this repo's Azure resources can live in different resource groups, but using one resource group makes workshop cleanup and troubleshooting simpler.
+
+## 1. Prepare Azure Resource Group
+
+Create or select a resource group for the workshop. Use the same region you plan to use for Foundry and Azure OpenAI if possible.
+
+With Azure CLI:
+
+```bash
+az group create \
+  --name mongodb-agent-rg \
+  --location eastus
+```
+
+The Azure Portal deployment path can also create the resource group for you. The helper scripts ask for the resource group name and create it automatically if needed.
+
+## 2. Prepare Azure OpenAI and Foundry
+
+In Microsoft Foundry:
+
+1. Create or select a Foundry project.
+2. Deploy a chat model for the agent, for example `gpt-4.1`.
+3. Deploy an embedding model with deployment name `text-embedding-ada-002`.
+4. Copy the Azure OpenAI endpoint for the resource that hosts the embedding deployment.
+5. Copy an API key for that same resource.
+
+Use the **Azure OpenAI endpoint**, not the Foundry project endpoint, for this project's `AZURE_OPENAI_ENDPOINT` value.
+
+The Function App uses the endpoint, key, and embedding deployment name to call:
+
+```text
+{AZURE_OPENAI_ENDPOINT}/openai/deployments/{EMBEDDING_MODEL}/embeddings
+```
+
+## 3. Prepare MongoDB Atlas
 
 1. In MongoDB Atlas, create or select a cluster.
 2. Load the Atlas sample datasets into the cluster.
@@ -145,23 +193,7 @@ db.embedded_movies.createSearchIndex(
 
 Wait until the index is active before testing semantic prompts.
 
-## 2. Prepare Azure OpenAI and Foundry
-
-In Microsoft Foundry:
-
-1. Create or select a Foundry project.
-2. Deploy a chat model for the agent, for example `gpt-4.1`.
-3. Deploy an embedding model with deployment name `text-embedding-ada-002`.
-4. Copy the Azure OpenAI endpoint for the resource that hosts the embedding deployment.
-5. Copy an API key for that same resource.
-
-The Function App uses the endpoint, key, and embedding deployment name to call:
-
-```text
-{AZURE_OPENAI_ENDPOINT}/openai/deployments/{EMBEDDING_MODEL}/embeddings
-```
-
-## 3. Deploy the Azure Resources
+## 4. Deploy the Azure Resources
 
 Choose one deployment path. The helper scripts deploy the Azure infrastructure and publish the Function code. The Azure Portal button deploys infrastructure only, so it has one extra local publish step afterward.
 
@@ -294,7 +326,7 @@ The Function App name is printed as `functionAppName` by the embedding Function 
 
 If you used the Azure Portal button, the Function App name is printed as the `functionAppName` output in the portal deployment.
 
-## 4. Validate the Deployed Services
+## 5. Validate the Deployed Services
 
 Set these local shell variables to the URLs from the deployment output:
 
@@ -340,7 +372,7 @@ Expected response shape:
 
 The actual `embedding` array should contain 1536 numbers.
 
-## 5. Update the OpenAPI Schema
+## 6. Update the OpenAPI Schema
 
 Open [docs/openapi-schema.json](docs/openapi-schema.json) and replace the placeholder server URL:
 
@@ -356,7 +388,7 @@ with your Function App base API URL:
 
 Do not include `/embed` in the `servers[0].url` value. The schema already defines the `/embed` path.
 
-## 6. Create the Foundry Agent
+## 7. Create the Foundry Agent
 
 In Microsoft Foundry:
 
@@ -373,7 +405,7 @@ Keep the tool name `EmbeddingGenerator` aligned with [docs/agent-instructions.md
 
 Because all movie queries use `embedded_movies`, normal find and aggregation projections should exclude `plot_embedding`. That field is only an internal vector-search input, not something users should see in answers.
 
-## 7. Add the Embedding OpenAPI Tool
+## 8. Add the Embedding OpenAPI Tool
 
 In the agent setup pane:
 
@@ -391,7 +423,7 @@ x-api-key: anonymous
 
 The current Function App ignores that header because the HTTP trigger is anonymous.
 
-## 8. Add the MongoDB MCP Tool
+## 9. Add the MongoDB MCP Tool
 
 In the agent setup pane:
 
@@ -411,7 +443,7 @@ MDB_MCP_READ_ONLY=true
 
 The read-only setting is intentional for workshop and demo safety.
 
-## 9. Test in the Foundry Playground
+## 10. Test in the Foundry Playground
 
 Open the agent in the playground and paste prompts from [samples/queries.md](samples/queries.md).
 
@@ -470,7 +502,7 @@ Expected tool behavior:
 - The MongoDB aggregation uses `sample_mflix.embedded_movies`.
 - The result is filtered or sorted using rating fields after vector search.
 
-## 10. Troubleshooting
+## 11. Troubleshooting
 
 ### The embedding API returns 500
 
@@ -523,7 +555,7 @@ Confirm that:
 - The Function App route is `/api/embed`.
 - Authentication is anonymous, or any required Foundry connection uses a harmless dummy header.
 
-## 11. Local Development
+## 12. Local Development
 
 To run the embedding Function locally:
 
@@ -553,7 +585,7 @@ curl -X POST "http://localhost:7071/api/embed" \
 
 `local.settings.json` contains secrets. Keep it local and uncommitted.
 
-## 12. Useful Validation Commands
+## 13. Useful Validation Commands
 
 Compile the Function source:
 
@@ -568,7 +600,7 @@ az bicep build --file deploy/mcp-server/main.bicep
 az bicep build --file deploy/embedding-function/main.bicep
 ```
 
-## 13. Clean Up
+## 14. Clean Up
 
 To delete the Azure resources created by the default script:
 
