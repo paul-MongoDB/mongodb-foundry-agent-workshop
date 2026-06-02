@@ -3,7 +3,7 @@
 Test your MongoDB Search Agent with these queries.
 
 ## Semantic/Vector Search Queries
-These queries require the agent to generate embeddings and perform vector search:
+These queries require the agent to use MongoDB MCP `$vectorSearch` against the auto-embed index. The agent should pass the concept as `query.text`; no separate embedding tool is used.
 
 1. **Themes of Hope**
    - "Find movies about hope and redemption"
@@ -80,7 +80,7 @@ These may require multiple tool calls:
 
 | Query Type | Tools Used | Collection |
 |------------|------------|------------|
-| Semantic (themes) | EmbeddingGenerator → MongoDB | embedded_movies |
+| Semantic (themes) | MongoDB MCP auto-embed vector search | embedded_movies |
 | Direct (filters) | MongoDB only | embedded_movies |
 | Aggregations | MongoDB only | embedded_movies |
-| Hybrid | EmbeddingGenerator → MongoDB | embedded_movies |
+| Hybrid | MongoDB MCP auto-embed vector search | embedded_movies |

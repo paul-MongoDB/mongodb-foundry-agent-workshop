@@ -20,31 +20,10 @@
       "metadata": {
         "description": "MongoDB Atlas Connection String"
       }
-    },
-    "azureOpenAIEndpoint": {
-      "type": "string",
-      "metadata": {
-        "description": "Azure OpenAI Endpoint URL"
-      }
-    },
-    "azureOpenAIKey": {
-      "type": "securestring",
-      "metadata": {
-        "description": "Azure OpenAI API Key"
-      }
-    },
-    "embeddingModel": {
-      "type": "string",
-      "defaultValue": "text-embedding-ada-002",
-      "metadata": {
-        "description": "Embedding model deployment name"
-      }
     }
   },
   "variables": {
     "mcpServerName": "[concat('mongo-mcp-', uniqueString(resourceGroup().id))]",
-    "functionAppName": "[concat('embed-func-', uniqueString(resourceGroup().id))]",
-    "storageAccountName": "[concat('st', uniqueString(resourceGroup().id))]",
     "containerEnvName": "[concat('mcp-env-', uniqueString(resourceGroup().id))]"
   },
   "resources": [
@@ -121,74 +100,6 @@
           }
         }
       }
-    },
-    {
-      "type": "Microsoft.Storage/storageAccounts",
-      "apiVersion": "2023-01-01",
-      "name": "[variables('storageAccountName')]",
-      "location": "[parameters('location')]",
-      "sku": {
-        "name": "Standard_LRS"
-      },
-      "kind": "StorageV2"
-    },
-    {
-      "type": "Microsoft.Web/serverfarms",
-      "apiVersion": "2023-01-01",
-      "name": "[concat(variables('functionAppName'), '-plan')]",
-      "location": "[parameters('location')]",
-      "sku": {
-        "name": "Y1",
-        "tier": "Dynamic"
-      },
-      "properties": {
-        "reserved": true
-      }
-    },
-    {
-      "type": "Microsoft.Web/sites",
-      "apiVersion": "2023-01-01",
-      "name": "[variables('functionAppName')]",
-      "location": "[parameters('location')]",
-      "kind": "functionapp,linux",
-      "dependsOn": [
-        "[resourceId('Microsoft.Web/serverfarms', concat(variables('functionAppName'), '-plan'))]",
-        "[resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountName'))]"
-      ],
-      "properties": {
-        "serverFarmId": "[resourceId('Microsoft.Web/serverfarms', concat(variables('functionAppName'), '-plan'))]",
-        "siteConfig": {
-          "pythonVersion": "3.11",
-          "linuxFxVersion": "PYTHON|3.11",
-          "appSettings": [
-            {
-              "name": "AzureWebJobsStorage",
-              "value": "[concat('DefaultEndpointsProtocol=https;AccountName=', variables('storageAccountName'), ';AccountKey=', listKeys(resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountName')), '2023-01-01').keys[0].value)]"
-            },
-            {
-              "name": "FUNCTIONS_EXTENSION_VERSION",
-              "value": "~4"
-            },
-            {
-              "name": "FUNCTIONS_WORKER_RUNTIME",
-              "value": "python"
-            },
-            {
-              "name": "AZURE_OPENAI_ENDPOINT",
-              "value": "[parameters('azureOpenAIEndpoint')]"
-            },
-            {
-              "name": "AZURE_OPENAI_API_KEY",
-              "value": "[parameters('azureOpenAIKey')]"
-            },
-            {
-              "name": "EMBEDDING_MODEL",
-              "value": "[parameters('embeddingModel')]"
-            }
-          ]
-        },
-        "httpsOnly": true
-      }
     }
   ],
   "outputs": {
@@ -196,13 +107,9 @@
       "type": "string",
       "value": "[concat('https://', reference(resourceId('Microsoft.App/containerApps', variables('mcpServerName'))).configuration.ingress.fqdn, '/mcp')]"
     },
-    "embeddingFunctionUrl": {
+    "containerAppName": {
       "type": "string",
-      "value": "[concat('https://', reference(resourceId('Microsoft.Web/sites', variables('functionAppName'))).defaultHostName, '/api/embed')]"
-    },
-    "functionAppName": {
-      "type": "string",
-      "value": "[variables('functionAppName')]"
+      "value": "[variables('mcpServerName')]"
     }
   }
 }

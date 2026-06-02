@@ -1,16 +1,14 @@
 # MongoDB Atlas Search Agent for Azure AI Foundry
 
-Many AI projects start in Microsoft Foundry, but the data they need to reason over already lives in MongoDB Atlas. This repository shows one practical way to connect those two worlds: use the MongoDB MCP Server to make Atlas available as a Foundry agent tool, then add a small embedding service for semantic search.
-
-The goal is not just to deploy a movie database assistant. The goal is to understand the integration pattern. If you want a Foundry agent to use Atlas data, this sample shows how to let the agent query MongoDB directly, run aggregations, and perform vector search when a user asks a conceptual question.
+Many AI projects start in Microsoft Foundry, but the data they need to reason over already lives in MongoDB Atlas. This repository shows a compact integration pattern: use the MongoDB MCP Server to make Atlas available as a Foundry agent tool, and use MongoDB Atlas Vector Search automated embedding for semantic movie questions.
 
 This repo uses the MongoDB Atlas `sample_mflix` dataset so the pattern is easy to try end to end. Once deployed, the agent can answer direct movie questions, calculate statistics, and find movies by meaning or theme.
 
 The deployed agent uses:
 
-- A MongoDB MCP Server, deployed to Azure Container Apps, for direct MongoDB queries and aggregations.
-- An embedding API, deployed as an Azure Function, for generating query vectors before semantic MongoDB Vector Search.
-- An Azure AI Foundry agent that decides which tool path fits the user's question.
+- A MongoDB MCP Server, deployed to Azure Container Apps, for direct MongoDB queries, aggregations, and vector search.
+- A MongoDB Atlas auto-embed Vector Search index that turns semantic query text into embeddings at query time.
+- An Azure AI Foundry agent that decides which MongoDB query path fits the user's question.
 
 After deployment, open the agent in the Foundry playground, paste prompts from [samples/queries.md](samples/queries.md), and inspect the tool calls to see how Foundry uses Atlas through MCP.
 
@@ -26,21 +24,19 @@ Foundry agent
         |
         +-- Aggregation/statistics --------> MongoDB MCP Server --> sample_mflix.embedded_movies
         |
-        +-- Semantic movie search ---------> Embedding Function --> Azure OpenAI embedding deployment
-                                            |
-                                            v
-                                      MongoDB MCP Server --> $vectorSearch on sample_mflix.embedded_movies
+        +-- Semantic movie search ---------> MongoDB MCP Server --> $vectorSearch query.text
+                                                                    |
+                                                                    v
+                                                              Atlas auto-embed index
 ```
 
 Semantic search depends on these values staying aligned:
 
 - MongoDB database: `sample_mflix`
 - Movie query collection: `embedded_movies`
-- Vector index name: `vector_index`
-- Vector field: `plot_embedding`
-- Embedding model deployment: `text-embedding-ada-002`
-- Embedding dimensions: `1536`
-- Similarity: `cosine`
+- Vector index name: `vector_index_fullplot`
+- Auto-embed text field: `fullplot`
+- Auto-embed model: `voyage-4`
 
 ## Repository Layout
 
@@ -48,13 +44,11 @@ Semantic search depends on these values staying aligned:
 .env.template                      Local deployment test environment template
 
 deploy/
-  azuredeploy.json                 Combined ARM template for one-shot infrastructure deployment
-  embedding-function/main.bicep    Function App, storage account, and app settings
+  azuredeploy.json                 Combined ARM template for one-shot MCP Server deployment
   mcp-server/main.bicep            MongoDB MCP Server Container App
 
 docs/
   agent-instructions.md            Canonical instructions to paste into the Foundry agent
-  openapi-schema.json              OpenAPI schema for the embedding Function
 
 samples/
   queries.md                       Prompts for manual playground validation
@@ -62,12 +56,6 @@ samples/
 scripts/
   deploy.sh                        Bash deployment helper
   deploy.ps1                       PowerShell deployment helper
-
-src/embedding-function/
-  function_app.py                  Azure Function source for /api/embed and /api/health
-  host.json                        Azure Functions host configuration
-  local.settings.json.template     Local settings template
-  requirements.txt                 Python dependencies
 ```
 
 ## Prerequisites
@@ -77,21 +65,15 @@ You need:
 - An Azure subscription.
 - A resource group for the deployment resources.
 - Azure CLI: `az`.
-- Azure Functions Core Tools v4: `func`.
 - `jq` if you use `scripts/deploy.sh`.
-- Python 3.11 or newer.
 - A Microsoft Foundry project with a chat model deployment for the agent, such as `gpt-4.1`.
-- An Azure OpenAI embedding deployment named `text-embedding-ada-002`.
 - A MongoDB Atlas cluster with the Atlas sample data loaded.
+- MongoDB Atlas automated embedding enabled and available for your cluster.
 - A MongoDB Atlas connection string for a database user that can read `sample_mflix`.
 
-Keep the Foundry project, the Azure OpenAI embedding deployment, the Function App, and the MCP Server in compatible regions whenever possible. The deployment scripts default to `eastus`; enter another Azure region, such as `eastus2`, if that is where your Foundry project and model deployment live.
-
-Do not commit or paste real secrets from `src/embedding-function/local.settings.json` or `.env`.
+Do not commit or paste real secrets from `.env` or local shell history.
 
 For local clean-deployment testing, copy [.env.template](.env.template) to `.env` and fill in your own values. The real `.env` file is ignored by git.
-
-A Python virtual environment is optional. You only need one if you want to run the embedding Function locally or install Python dependencies outside the Azure deployment flow.
 
 ## Recommended Setup Order
 
@@ -100,17 +82,15 @@ For the smoothest setup experience, keep the Foundry project and this repo's Azu
 1. Create or select one Azure resource group for the deployment.
 2. Create or select a Microsoft Foundry project in that resource group.
 3. Deploy the chat model for the agent, such as `gpt-4.1`.
-4. Deploy the embedding model with deployment name `text-embedding-ada-002`.
-5. Prepare MongoDB Atlas sample data and the `vector_index` index.
-6. Deploy this repo's Azure resources.
-7. Publish the embedding Function code.
-8. Create the Foundry agent, add tools, paste instructions, and test prompts.
+4. Prepare MongoDB Atlas sample data and the `vector_index_fullplot` auto-embed index.
+5. Deploy this repo's MongoDB MCP Server.
+6. Create the Foundry agent, add the MCP tool, paste instructions, and test prompts.
 
 The Foundry project and this repo's Azure resources can live in different resource groups, but using one resource group makes cleanup and troubleshooting simpler.
 
 ## 1. Prepare Azure Resource Group
 
-Create or select a resource group for the deployment. Use the same region you plan to use for Foundry and Azure OpenAI if possible.
+Create or select a resource group for the deployment.
 
 With Azure CLI:
 
@@ -122,23 +102,16 @@ az group create \
 
 The Azure Portal deployment path can also create the resource group for you. The helper scripts ask for the resource group name and create it automatically if needed.
 
-## 2. Prepare Azure OpenAI and Foundry
+## 2. Prepare Microsoft Foundry
 
 In Microsoft Foundry:
 
 1. Create or select a Foundry project.
 2. Deploy a chat model for the agent, for example `gpt-4.1`.
-3. Deploy an embedding model with deployment name `text-embedding-ada-002`.
-4. Copy the Azure OpenAI endpoint for the resource that hosts the embedding deployment.
-5. Copy an API key for that same resource.
 
-Use the **Azure OpenAI endpoint**, not the Foundry project endpoint, for this project's `AZURE_OPENAI_ENDPOINT` value.
+No Azure OpenAI embedding deployment is required for this workshop version.
 
-The Function App uses the endpoint, key, and embedding deployment name to call:
-
-```text
-{AZURE_OPENAI_ENDPOINT}/openai/deployments/{EMBEDDING_MODEL}/embeddings
-```
+Atlas automated embedding is managed by MongoDB. The MCP Server passes semantic query text through `$vectorSearch.query.text`; it does not need a separate Voyage AI API key.
 
 ## 3. Prepare MongoDB Atlas
 
@@ -150,14 +123,14 @@ The Function App uses the endpoint, key, and embedding deployment name to call:
 
 For a short-lived demo, you can temporarily allow access from `0.0.0.0/0`. For anything longer-lived, restrict access to the Container App egress addresses or your private networking setup.
 
-### Create the Vector Search Index
+### Create the Auto-Embed Vector Search Index
 
 Create a MongoDB Vector Search index on `sample_mflix.embedded_movies`.
 
 Use this index name:
 
 ```text
-vector_index
+vector_index_fullplot
 ```
 
 Use this index definition:
@@ -166,81 +139,42 @@ Use this index definition:
 {
   "fields": [
     {
-      "type": "vector",
-      "path": "plot_embedding",
-      "numDimensions": 1536,
-      "similarity": "cosine"
+      "type": "autoEmbed",
+      "modality": "text",
+      "path": "fullplot",
+      "model": "voyage-4"
     }
   ]
 }
 ```
 
-If you use `mongosh`, the equivalent command is:
-
-```javascript
-use sample_mflix
-
-db.embedded_movies.createSearchIndex(
-  "vector_index",
-  "vectorSearch",
-  {
-    "fields": [
-      {
-        "type": "vector",
-        "path": "plot_embedding",
-        "numDimensions": 1536,
-        "similarity": "cosine"
-      }
-    ]
-  }
-);
-```
-
-Wait until the index is active before testing semantic prompts.
+Wait until the index is active before testing semantic prompts. If you already created an auto-embed index with a different field, model, or index name, update [docs/agent-instructions.md](docs/agent-instructions.md) so the agent uses those exact values.
 
 ## 4. Deploy the Azure Resources
 
-Choose one deployment path. The helper scripts deploy the Azure infrastructure and publish the Function code. The Azure Portal button deploys infrastructure only, so it has one extra local publish step afterward.
+Choose one deployment path.
 
 All paths provision this sample's Azure resources in the selected resource group:
 
 - A MongoDB MCP Server container app.
-- A Linux Python Azure Function App.
-- A storage account for the Function App.
+- A Container Apps managed environment for the MCP Server.
 
-This repo pins the MongoDB MCP Server image to `mongodb/mongodb-mcp-server:1.11.0` for repeatable deployments. Update that version intentionally after testing a newer MCP Server release.
+This repo pins the MongoDB MCP Server image to `mongodb/mongodb-mcp-server:1.11.0` for repeatable deployments.
 
 ### Azure Portal
 
-[![Deploy to Azure](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2Fpaul-MongoDB%2Fmongodb-foundry-agent-workshop%2Fmain%2Fdeploy%2Fazuredeploy.json)
+[![Deploy to Azure](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2Fpaul-MongoDB%2Fmongodb-foundry-agent-workshop%2Fmcp-voyage-embeddings%2Fdeploy%2Fazuredeploy.json)
 
-This button opens the Azure Portal and deploys [deploy/azuredeploy.json](deploy/azuredeploy.json). It creates the Container App, Function App, storage account, and app settings, but it does not upload the Python Function code from this repository.
+This button opens the Azure Portal and deploys [deploy/azuredeploy.json](deploy/azuredeploy.json). It creates the Container App and Container Apps managed environment.
 
 In the Azure Portal form:
 
 1. Select your subscription.
 2. Create or select a resource group.
-3. Select the region that matches your Foundry and Azure OpenAI setup.
+3. Select the Azure region for the MCP Server.
 4. Enter your MongoDB Atlas connection string.
-5. Enter your Azure OpenAI endpoint.
-6. Enter your Azure OpenAI API key.
-7. Confirm the embedding deployment name, usually `text-embedding-ada-002`.
 
-After deployment completes, copy these output values:
-
-- `mcpServerUrl`
-- `embeddingFunctionUrl`
-- `functionAppName`
-
-Then publish the Function code locally:
-
-```bash
-cd src/embedding-function
-func azure functionapp publish <functionAppName>
-cd ../..
-```
-
-Use the `functionAppName` output from the portal deployment in place of `<functionAppName>`.
+After deployment completes, copy the `mcpServerUrl` and `containerAppName` output values.
 
 ### Bash
 
@@ -256,16 +190,8 @@ The script prompts for:
 - Resource group name.
 - Azure region.
 - MongoDB Atlas connection string.
-- Azure OpenAI endpoint.
-- Azure OpenAI API key.
-- Embedding deployment name.
 
-At the end, save the printed values:
-
-- `MCP Server URL`, which should end in `/mcp`.
-- `Embedding API URL`, which should end in `/api/embed`.
-
-The Bash script publishes the Function code automatically.
+At the end, save the printed `MCP Server URL`, which should end in `/mcp`.
 
 ### PowerShell
 
@@ -275,15 +201,10 @@ From the repository root:
 ./scripts/deploy.ps1 `
   -ResourceGroup "mongodb-agent-rg" `
   -Location "eastus" `
-  -MongoDBConnectionString "<mongodb-atlas-connection-string>" `
-  -AzureOpenAIEndpoint "https://<your-resource>.openai.azure.com" `
-  -AzureOpenAIKey "<azure-openai-key>" `
-  -EmbeddingModel "text-embedding-ada-002"
+  -MongoDBConnectionString "<mongodb-atlas-connection-string>"
 ```
 
-Save the printed MCP Server URL and embedding API URL.
-
-The PowerShell script publishes the Function code automatically.
+Save the printed MCP Server URL.
 
 ### Manual Bicep Deployment
 
@@ -307,93 +228,24 @@ az deployment group create \
   --query "properties.outputs"
 ```
 
-Deploy the embedding Function infrastructure:
+## 5. Validate the MCP Server
+
+Set this local shell variable to the URL from the deployment output:
 
 ```bash
-az deployment group create \
-  --resource-group mongodb-agent-rg \
-  --template-file deploy/embedding-function/main.bicep \
-  --parameters azureOpenAIEndpoint="https://<your-resource>.openai.azure.com" \
-               azureOpenAIKey="<azure-openai-key>" \
-               embeddingModel="text-embedding-ada-002" \
-  --query "properties.outputs"
-```
-
-Publish the Function code:
-
-```bash
-cd src/embedding-function
-func azure functionapp publish <function-app-name>
-cd ../..
-```
-
-The Function App name is printed as `functionAppName` by the embedding Function Bicep deployment.
-
-If you used the Azure Portal button, the Function App name is printed as the `functionAppName` output in the portal deployment.
-
-## 5. Validate the Deployed Services
-
-Set these local shell variables to the URLs from the deployment output:
-
-```bash
-export EMBEDDING_API_URL="https://<function-app>.azurewebsites.net/api/embed"
-export EMBEDDING_HEALTH_URL="https://<function-app>.azurewebsites.net/api/health"
 export MCP_SERVER_URL="https://<container-app>.<region>.azurecontainerapps.io/mcp"
 ```
 
-Check the Function health endpoint:
+The Foundry MCP tool setup is the main validation point for this sample. If you want a lower-level check, confirm the Container App is running. For script or Bicep deployments, the default name is `mongo-mcp-server`; for the Azure Portal template, use the `containerAppName` output:
 
 ```bash
-curl "$EMBEDDING_HEALTH_URL"
+az containerapp show \
+  --resource-group mongodb-agent-rg \
+  --name mongo-mcp-server \
+  --query "properties.runningStatus"
 ```
 
-Expected response shape:
-
-```json
-{
-  "status": "healthy",
-  "model": "text-embedding-ada-002",
-  "endpoint_configured": true
-}
-```
-
-Generate a test embedding:
-
-```bash
-curl -X POST "$EMBEDDING_API_URL" \
-  -H "Content-Type: application/json" \
-  -d '{"text":"movies about hope and redemption"}'
-```
-
-Expected response shape:
-
-```json
-{
-  "embedding": [0.0],
-  "dimensions": 1536,
-  "model": "text-embedding-ada-002"
-}
-```
-
-The actual `embedding` array should contain 1536 numbers.
-
-## 6. Update the OpenAPI Schema
-
-Open [docs/openapi-schema.json](docs/openapi-schema.json) and replace the placeholder server URL:
-
-```json
-"url": "https://YOUR_FUNCTION_APP.azurewebsites.net/api"
-```
-
-with your Function App base API URL:
-
-```json
-"url": "https://<function-app>.azurewebsites.net/api"
-```
-
-Do not include `/embed` in the `servers[0].url` value. The schema already defines the `/embed` path.
-
-## 7. Create the Foundry Agent
+## 6. Create the Foundry Agent
 
 In Microsoft Foundry:
 
@@ -404,35 +256,13 @@ In Microsoft Foundry:
 5. Open [docs/agent-instructions.md](docs/agent-instructions.md).
 6. Copy the instruction body below the `---` divider and paste it into the agent's **Instructions** field.
 
-Those instructions are the canonical behavior contract for the agent. They tell the model to use `sample_mflix.embedded_movies` for every movie query, when to use direct MongoDB queries, when to use aggregations, and when to call `EmbeddingGenerator` before running `$vectorSearch`. They also require the agent to answer only from tool results and report failures or no-result cases instead of filling gaps from web or model knowledge.
+Those instructions are the canonical behavior contract for the agent. They tell the model to use `sample_mflix.embedded_movies` for every movie query, when to use direct MongoDB queries, when to use aggregations, and when to use `$vectorSearch.query.text` against `fullplot` for auto-embedded semantic search. They also require the agent to answer only from tool results and report failures or no-result cases instead of filling gaps from web or model knowledge.
 
-Keep the tool name `EmbeddingGenerator` aligned with [docs/agent-instructions.md](docs/agent-instructions.md) and [docs/openapi-schema.json](docs/openapi-schema.json). If you rename the OpenAPI tool in Foundry, update the instructions to match.
-
-Because all movie queries use `embedded_movies`, normal find and aggregation projections should exclude `plot_embedding`. That field is only an internal vector-search input, not something users should see in answers.
-
-## 8. Add the Embedding OpenAPI Tool
+## 7. Add the MongoDB MCP Tool
 
 In the agent setup pane:
 
 1. Add a tool.
-2. Choose the OpenAPI tool option.
-3. Upload or paste [docs/openapi-schema.json](docs/openapi-schema.json).
-4. Name the tool `EmbeddingGenerator`.
-5. Choose anonymous authentication if the portal offers it.
-
-If your portal version requires a connection even for anonymous endpoints, create a harmless header-based connection such as:
-
-```text
-x-api-key: anonymous
-```
-
-The current Function App ignores that header because the HTTP trigger is anonymous.
-
-## 9. Add the MongoDB MCP Tool
-
-In the agent setup pane:
-
-1. Add another tool.
 2. Choose the MCP tool option.
 3. Use the MCP Server URL printed by deployment.
 4. Set authentication to unauthenticated.
@@ -448,7 +278,7 @@ MDB_MCP_READ_ONLY=true
 
 The read-only setting is intentional for demo safety.
 
-## 10. Test in the Foundry Playground
+## 8. Test in the Foundry Playground
 
 Open the agent in the playground and paste prompts from [samples/queries.md](samples/queries.md).
 
@@ -465,7 +295,7 @@ Expected tool behavior:
 - The agent calls MongoDB MCP.
 - The query targets `sample_mflix.embedded_movies`.
 - The query filters on the movie year.
-- The embedding tool is not needed.
+- Vector search is not needed.
 
 ### Aggregation Query
 
@@ -478,7 +308,7 @@ Expected tool behavior:
 - The agent calls MongoDB MCP.
 - The query targets `sample_mflix.embedded_movies`.
 - The query uses aggregation, sorting, and limiting.
-- The embedding tool is not needed.
+- Vector search is not needed.
 
 ### Semantic Query
 
@@ -488,12 +318,13 @@ Find movies about hope and redemption
 
 Expected tool behavior:
 
-- The agent first calls `EmbeddingGenerator.generateEmbedding`.
-- The agent then calls MongoDB MCP aggregate.
+- The agent calls MongoDB MCP aggregate.
 - The aggregation targets `sample_mflix.embedded_movies`.
 - The first stage is `$vectorSearch`.
-- `$vectorSearch.index` is `vector_index`.
-- `$vectorSearch.path` is `plot_embedding`.
+- `$vectorSearch.index` is `vector_index_fullplot`.
+- `$vectorSearch.path` is `fullplot`.
+- `$vectorSearch.query.text` contains the semantic concept from the user prompt.
+- The agent does not call a separate embedding tool.
 
 ### Hybrid Query
 
@@ -503,44 +334,30 @@ What highly-rated movies are about time travel?
 
 Expected tool behavior:
 
-- The agent uses the embedding tool for the semantic concept.
-- The MongoDB aggregation uses `sample_mflix.embedded_movies`.
+- The agent uses MongoDB MCP aggregate.
+- The first stage is `$vectorSearch` with `query.text` for the semantic concept.
 - The result is filtered or sorted using rating fields after vector search.
 
-## 11. Troubleshooting
-
-### The embedding API returns 500
-
-Check that the Function App settings contain:
-
-- `AZURE_OPENAI_ENDPOINT`
-- `AZURE_OPENAI_API_KEY`
-- `EMBEDDING_MODEL`
-
-Also confirm that `EMBEDDING_MODEL` is the deployment name, not just the model family name.
-
-### The health endpoint says `endpoint_configured: false`
-
-The Function App is missing `AZURE_OPENAI_ENDPOINT`. Redeploy the embedding Function infrastructure or update the Function App configuration in Azure.
+## 9. Troubleshooting
 
 ### Semantic prompts do not use vector search
 
 Confirm that:
 
 - The instruction body from [docs/agent-instructions.md](docs/agent-instructions.md) was pasted completely.
-- The OpenAPI tool is named or described clearly enough for embedding generation.
-- The OpenAPI schema server URL points to `https://<function-app>.azurewebsites.net/api`.
 - The prompt is conceptual or thematic, not a direct field lookup.
+- The MongoDB MCP tool is enabled for the agent.
 
 ### `$vectorSearch` fails
 
 Confirm that:
 
-- The Atlas index is named `vector_index`.
+- The Atlas index is named `vector_index_fullplot`.
 - The index is active.
 - The index is on `sample_mflix.embedded_movies`.
-- The vector field is `plot_embedding`.
-- The embedding response has `dimensions: 1536`.
+- The index field is `fullplot`.
+- The index field type is `autoEmbed`, not `vector`.
+- The MCP aggregate stage uses `query.text`, not `queryVector`.
 
 ### MongoDB MCP cannot connect to Atlas
 
@@ -551,61 +368,30 @@ Confirm that:
 - Atlas Network Access allows the Container App egress.
 - The Container App is running.
 
-### The OpenAPI tool cannot call the Function App
+### Foundry cannot connect to the MCP Server
 
 Confirm that:
 
-- The Function App URL is reachable from your browser or `curl`.
-- The OpenAPI server URL does not include `/embed`.
-- The Function App route is `/api/embed`.
-- Authentication is anonymous, or any required Foundry connection uses a harmless dummy header.
+- The MCP Server URL ends in `/mcp`.
+- Foundry MCP tool authentication is set to unauthenticated.
+- The Container App ingress is enabled and external.
+- `MDB_MCP_HTTP_AUTH_MODE` is `none`.
 
-## 12. Local Development
+## 10. Useful Validation Commands
 
-To run the embedding Function locally:
-
-```bash
-cp src/embedding-function/local.settings.json.template src/embedding-function/local.settings.json
-cd src/embedding-function
-func start
-```
-
-If you want an isolated Python environment for local testing, create one before running `func start`:
+Validate the Bicep file:
 
 ```bash
-cd src/embedding-function
-python3.11 -m venv .venv
-source .venv/bin/activate
-python -m pip install -r requirements.txt
-func start
+az bicep build --file deploy/mcp-server/main.bicep --stdout
 ```
 
-Then call:
+Validate the combined ARM template:
 
 ```bash
-curl -X POST "http://localhost:7071/api/embed" \
-  -H "Content-Type: application/json" \
-  -d '{"text":"movies about hope and redemption"}'
+jq . deploy/azuredeploy.json
 ```
 
-`local.settings.json` contains secrets. Keep it local and uncommitted.
-
-## 13. Useful Validation Commands
-
-Compile the Function source:
-
-```bash
-python3 -m compileall src/embedding-function/function_app.py
-```
-
-Validate the Bicep files:
-
-```bash
-az bicep build --file deploy/mcp-server/main.bicep
-az bicep build --file deploy/embedding-function/main.bicep
-```
-
-## 14. Clean Up
+## 11. Clean Up
 
 To delete the Azure resources created by the default script:
 
@@ -617,7 +403,7 @@ Delete or tighten any temporary MongoDB Atlas network access rules after the dem
 
 ## Reference Links
 
-- [Microsoft Foundry OpenAPI tools](https://learn.microsoft.com/en-us/azure/foundry/agents/how-to/tools/openapi)
 - [Microsoft Foundry MCP tool authentication](https://learn.microsoft.com/en-us/azure/foundry/agents/how-to/mcp-authentication)
 - [MongoDB Atlas sample_mflix dataset](https://www.mongodb.com/docs/atlas/sample-data/sample-mflix/)
+- [MongoDB Atlas Vector Search automated embedding](https://www.mongodb.com/docs/vector-search/crud-embeddings/automated-embedding/)
 - [MongoDB Vector Search index fields](https://www.mongodb.com/docs/vector-search/index/vector-search-type/)
