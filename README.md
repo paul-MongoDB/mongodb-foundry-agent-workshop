@@ -163,7 +163,7 @@ This repo pins the MongoDB MCP Server image to `mongodb/mongodb-mcp-server:1.11.
 
 ### Azure Portal
 
-[![Deploy to Azure](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2Fpaul-MongoDB%2Fmongodb-foundry-agent-workshop%2Fmcp-voyage-embeddings%2Fdeploy%2Fazuredeploy.json)
+[![Deploy to Azure](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2Fpaul-MongoDB%2Fmongodb-foundry-agent-workshop%2Fmain%2Fdeploy%2Fazuredeploy.json)
 
 This button opens the Azure Portal and deploys [deploy/azuredeploy.json](deploy/azuredeploy.json). It creates the Container App and Container Apps managed environment.
 
