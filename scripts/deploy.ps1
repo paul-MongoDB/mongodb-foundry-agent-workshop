@@ -41,7 +41,7 @@ Write-Host "Next Steps:" -ForegroundColor Yellow
 Write-Host "1. Go to https://ai.azure.com"
 Write-Host "2. Create a new agent"
 Write-Host "3. Add the MCP tool using the URL above"
-Write-Host "4. Paste docs/agent-instructions.md and test prompts from samples/queries.md"
+Write-Host "4. Follow docs/self-managed-mcp.md for agent setup and samples/queries.md for validation"
 Write-Host ""
 
 # Return URLs for programmatic use

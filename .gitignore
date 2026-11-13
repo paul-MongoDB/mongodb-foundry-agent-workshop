@@ -72,3 +72,9 @@ temp/
 # Azure deployment output files
 *.parameters.local.json
 *.bicepparam.local
+
+# Private local working material
+.local/
+
+# Private workshop delivery and partner handoff material
+/private-delivery/

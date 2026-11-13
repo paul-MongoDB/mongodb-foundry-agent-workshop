@@ -1,86 +1,137 @@
-# Sample Queries
+# Prompts and Atlas verification
 
-Test your MongoDB Search Agent with these queries.
+These examples demonstrate direct queries, aggregation, and semantic retrieval. Run them against `sample_mflix.embedded_movies` using the [short instructions](../docs/agent-instructions.md). Inspect the trace for the exact response under review.
 
-## Semantic/Vector Search Queries
-These queries require the agent to use MongoDB MCP `$vectorSearch` against the auto-embed index. The agent should pass the concept as `query.text`; no separate embedding tool is used.
+## 1. Exact count
 
-1. **Themes of Hope**
-   - "Find movies about hope and redemption"
-   - "Movies with themes of perseverance"
+```text
+How many movies were released in 1994?
+```
 
-2. **Emotional Themes**
-   - "Films about loss and grief"
-   - "Movies exploring loneliness and isolation"
-   - "Stories about overcoming adversity"
+Pass: a successful MCP `count` or `aggregate` call with `year: 1994`, and the answer agrees with its tool result and an independent Atlas query. A valid `find` followed by counting only a limited result set is not sufficient for an exact total.
 
-3. **Conceptual Searches**
-   - "Movies about the meaning of life"
-   - "Films exploring human nature"
-   - "Stories about family legacy and inheritance"
+In Atlas Data Explorer, open the collection's **Aggregations** tab:
 
-4. **Abstract Concepts**
-   - "Movies about time and its passage"
-   - "Films dealing with identity crisis"
-   - "Stories about second chances"
+```json
+[
+  { "$match": { "year": 1994 } },
+  { "$count": "movieCount" }
+]
+```
 
-## Direct Query Examples
-These queries filter by specific fields:
+The development dataset returned **66**. Use the collection's current answer. Match any additional filters used by the agent before comparing counts.
 
-1. **By Year**
-   - "Show me movies from 1994"
-   - "Find films released in the 1980s"
-   - "Movies from 2020"
+## 2. Genre statistics
 
-2. **By Cast**
-   - "Movies starring Tom Hanks"
-   - "Films with Morgan Freeman"
-   - "Movies featuring Leonardo DiCaprio"
+```text
+Across all documents in this collection, what are the five most common genres, and how many documents belong to each? Count each document once in each genre it belongs to.
+```
 
-3. **By Genre**
-   - "List all comedy movies"
-   - "Show me action films"
-   - "Find documentaries"
+Pass: a successful MCP aggregation expands genres, counts memberships, sorts, and returns five groups. Match the filter scope when comparing results. A movie can count in several genres, once in each.
 
-4. **By Rating**
-   - "Movies rated PG-13"
-   - "R-rated films"
-   - "Family-friendly movies (rated G or PG)"
+### Verify genre counts in Atlas
 
-5. **By Runtime**
-   - "Movies longer than 3 hours"
-   - "Short films under 90 minutes"
+The example counts all documents in the assigned collection. This independent pipeline deduplicates genre values within each document before counting:
 
-## Aggregation Queries
-These queries involve sorting, grouping, or statistics:
+```json
+[
+  {
+    "$project": {
+      "genres": { "$setUnion": [{ "$ifNull": ["$genres", []] }, []] }
+    }
+  },
+  { "$unwind": "$genres" },
+  { "$group": { "_id": "$genres", "movieCount": { "$sum": 1 } } },
+  { "$sort": { "movieCount": -1, "_id": 1 } },
+  { "$limit": 5 }
+]
+```
 
-1. **Top Rated**
-   - "What are the top 10 highest rated movies?"
-   - "Best sci-fi movies by rating"
-   - "Top 5 action movies"
+For an optional movies-only comparison, add `{ "$match": { "type": "movie" } }` as the first stage. This changes the scope and the totals; do not use that variant for the all-document example.
 
-2. **Statistics**
-   - "How many movies are in each genre?"
-   - "Average runtime of action movies"
-   - "Count of movies per year"
+Observed all-document results, verified through Foundry MCP and an independent Atlas pipeline in the new Azure Free cluster:
 
-3. **Combined Filters**
-   - "Top rated comedies from the 1990s"
-   - "Best movies with Tom Hanks"
-   - "Highest rated movies under 2 hours"
+| Genre | Count |
+|---|---:|
+| Action | 2,381 |
+| Drama | 1,271 |
+| Fantasy | 1,055 |
+| Adventure | 923 |
+| Comedy | 887 |
 
-## Complex/Multi-step Queries
-These may require multiple tool calls:
+These are reference observations, not fixed answers for every copy of the sample data.
 
-1. "Find movies similar to themes in The Shawshank Redemption"
-2. "What highly-rated movies are about time travel?"
-3. "Find recent movies (2015+) about family relationships"
+## 3. Semantic retrieval
 
-## Expected Behavior
+```text
+Find five movies about a group of astronauts struggling to survive a dangerous mission in space.
+```
 
-| Query Type | Tools Used | Collection |
-|------------|------------|------------|
-| Semantic (themes) | MongoDB MCP auto-embed vector search | embedded_movies |
-| Direct (filters) | MongoDB only | embedded_movies |
-| Aggregations | MongoDB only | embedded_movies |
-| Hybrid | MongoDB MCP auto-embed vector search | embedded_movies |
+Pass: a successful MCP aggregation on the intended collection starts with `$vectorSearch`, uses `vector_index_fullplot` on `fullplot` with natural-language `query.text`, and returns supporting documents. No separate embedding tool is required for this auto-embedding index. Review plots for relevance; do not require a fixed title list.
+
+For an independent mechanism check in Atlas, use:
+
+```json
+[
+  {
+    "$vectorSearch": {
+      "index": "vector_index_fullplot",
+      "path": "fullplot",
+      "query": { "text": "a group of astronauts struggling to survive a dangerous mission in space" },
+      "numCandidates": 200,
+      "limit": 5
+    }
+  },
+  {
+    "$project": {
+      "_id": 0,
+      "title": 1,
+      "year": 1,
+      "fullplot": 1,
+      "score": { "$meta": "vectorSearchScore" }
+    }
+  }
+]
+```
+
+For a direct result comparison, copy the agent's actual query text and pipeline parameters from its trace. Query expansion, filters, candidate count, and deduplication can change the returned titles. Similar titles alone do not establish that the agent executed vector search.
+
+## Fresh-chat check
+
+Start **New chat** with the same saved agent and repeat the semantic question. Confirm that connection, index discovery, and vector search succeed without earlier messages. This checks conversational independence; it does not replace testing OAuth consent with a fresh identity.
+
+## Additional queries
+
+A broader theme was exercised during development but gave mixed relevance in the Atlas Search Tester. Use it to discuss retrieval quality after the concrete core example:
+
+```text
+Find five movies about hope and redemption.
+```
+
+These are extension prompts rather than validated acceptance cases. Use tool results and inspect traces to assess them.
+
+```text
+Find five movies about finding belonging in an unfamiliar place.
+```
+
+```text
+Find five movies about rebuilding a life after a setback.
+```
+
+```text
+What highly rated movies are about time travel?
+```
+
+The last prompt combines thematic retrieval with a rating constraint. Inspect how the agent defines “highly rated,” applies filters, and limits its answer to retrieved candidates. Do not treat a ranking over a small candidate set as an exhaustive ranking of the entire catalog.
+
+```text
+Show me five movies starring Tom Hanks, including title and year.
+```
+
+```text
+What is the average runtime of action movies?
+```
+
+## Failure handling
+
+Use a fresh chat to try an unavailable database or collection. A passing response reports the actual tool failure or absence of data and does not invent movie facts. Perform read-only tests; do not disable authentication or attempt writes to induce a failure.
